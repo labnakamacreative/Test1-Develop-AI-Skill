@@ -40,8 +40,10 @@ export function importJSON(file: File): Promise<AppState> {
     reader.onload = () => {
       try {
         const parsed = JSON.parse(reader.result as string);
-        if (!parsed.config || !Array.isArray(parsed.items)) {
-          throw new Error("Format tidak valid: butuh { config, items }");
+        const validNew = Array.isArray(parsed.brands);
+        const validLegacy = parsed.config && Array.isArray(parsed.items);
+        if (!validNew && !validLegacy) {
+          throw new Error("Format tidak valid: butuh { brands } atau { config, items }");
         }
         resolve(parsed as AppState);
       } catch (e) {

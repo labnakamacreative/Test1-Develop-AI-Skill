@@ -207,8 +207,24 @@ export interface BrandConfig {
   contentAspects: { key: string; label: string }[];
 }
 
-export interface AppState {
-  config: BrandConfig;
+// ============================================================
+// Multi-brand workspaces — each brand is an isolated dashboard
+// (own config, team, pillars, goals, content & analytics).
+// ============================================================
+
+export type BrandType = "internal" | "eksternal";
+export type BrandStatus = "aktif" | "nonaktif";
+
+export interface Brand {
+  id: string;
+  type: BrandType;
+  status: BrandStatus;
+  config: BrandConfig; // config.brandName is the brand's display name
   items: ContentItem[];
-  currentUserId: string | null; // who is "logged in" (for My Queue / Approval Inbox)
+}
+
+export interface AppState {
+  brands: Brand[];
+  currentBrandId: string;
+  currentUserId: string | null; // logged-in member (validated against current brand)
 }
