@@ -275,7 +275,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const replaceState = useCallback<StoreContextValue["replaceState"]>((next) => setState(migrate(next)), []);
   const resetSeed = useCallback(() => setState(seedState()), []);
 
-  const currentAccessLevel = currentBrand.config.members.find((m) => m.id === state.currentUserId)?.accessLevel;
+  // Resolve the active account's permission tier.
+  //  - member found, has accessLevel        → use it
+  //  - member found, no accessLevel (legacy) → undefined → can() treats as full access (no lockout)
+  //  - no member / invalid user             → "staff" (most restrictive; not "logged in")
+  const currentMember = currentBrand.config.members.find((m) => m.id === state.currentUserId);
+  const currentAccessLevel: AccessLevel | undefined = currentMember ? currentMember.accessLevel : "staff";
   const can = useCallback((p: Permission) => evalPermission(currentAccessLevel, p), [currentAccessLevel]);
 
   const value = useMemo<StoreContextValue>(

@@ -36,7 +36,9 @@ const MIN_RANK: Record<Permission, number> = {
   deleteContent: 2, // manager+
   approve: 2, // manager+
   createBrand: 2, // manager+
-  manageBrand: 3, // head+
+  // manage = rename/status/type/delete brand. Kept equal to createBrand so that
+  // whoever can create a project can also manage & delete it (intuitive).
+  manageBrand: 2, // manager+
   editSettings: 2, // manager+
   manageAccounts: 4, // stakeholder only
 };
