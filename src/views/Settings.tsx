@@ -12,11 +12,14 @@ import {
 } from "../lib/constants";
 import { industryDefaults, recommendConfig } from "../lib/helpers";
 import { useStore } from "../lib/store";
+import { ACCESS_LABELS, ACCESS_LEVELS } from "../lib/permissions";
+import type { AccessLevel } from "../types";
 import { Button, Card, Field, inputCls } from "../components/ui";
 
 export function Settings() {
-  const { config, updateConfig, resetSeed } = useStore();
+  const { config, updateConfig, resetSeed, can } = useStore();
   const [rec, setRec] = useState<ReturnType<typeof recommendConfig> | null>(null);
+  const canAccounts = can("manageAccounts");
 
   const toggleArr = <T,>(arr: T[], v: T): T[] => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
 
@@ -52,6 +55,19 @@ export function Settings() {
       rolesEnabled: Array.from(new Set([...config.rolesEnabled, ...d.rolesToEnable])),
     });
   };
+
+  if (!can("editSettings")) {
+    return (
+      <div className="max-w-3xl">
+        <header className="mb-4">
+          <h1 className="text-2xl font-bold">Settings</h1>
+        </header>
+        <Card className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          Akun Staff tidak punya akses ke Settings. Hubungi Manager / Head / Stakeholder untuk perubahan konfigurasi.
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-3xl">
@@ -143,18 +159,29 @@ export function Settings() {
         {/* Members */}
         <Card className="p-4">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Tim & Role ({config.members.filter((m) => m.active).length} aktif)</h2>
-            <Button size="sm" variant="outline" onClick={addMember}>+ Anggota</Button>
+            <h2 className="text-sm font-semibold">Tim, Role & Akun ({config.members.filter((m) => m.active).length} aktif)</h2>
+            {canAccounts && <Button size="sm" variant="outline" onClick={addMember}>+ Anggota</Button>}
           </div>
+          {!canAccounts && (
+            <p className="mb-2 rounded bg-amber-50 p-2 text-xs text-amber-700">Hanya Stakeholder yang bisa menambah/mengubah akun & level akses. Kamu hanya bisa melihat.</p>
+          )}
           <div className="space-y-2">
             {config.members.map((m) => (
               <div key={m.id} className="rounded-lg border border-slate-100 p-2">
                 <div className="flex items-center gap-2">
-                  <input className={`${inputCls} flex-1`} value={m.name} onChange={(e) => updateMember(m.id, { name: e.target.value })} />
+                  <input className={`${inputCls} flex-1`} value={m.name} disabled={!canAccounts} onChange={(e) => updateMember(m.id, { name: e.target.value })} />
+                  <select
+                    className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+                    value={m.accessLevel ?? "stakeholder"}
+                    disabled={!canAccounts}
+                    onChange={(e) => updateMember(m.id, { accessLevel: e.target.value as AccessLevel })}
+                  >
+                    {ACCESS_LEVELS.map((lv) => <option key={lv} value={lv}>{ACCESS_LABELS[lv]}</option>)}
+                  </select>
                   <label className="flex items-center gap-1 text-xs text-slate-500">
-                    <input type="checkbox" checked={m.active} onChange={(e) => updateMember(m.id, { active: e.target.checked })} /> aktif
+                    <input type="checkbox" checked={m.active} disabled={!canAccounts} onChange={(e) => updateMember(m.id, { active: e.target.checked })} /> aktif
                   </label>
-                  <button className="text-xs text-red-500 hover:underline" onClick={() => removeMember(m.id)}>hapus</button>
+                  {canAccounts && <button className="text-xs text-red-500 hover:underline" onClick={() => removeMember(m.id)}>hapus</button>}
                 </div>
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   {ROLES.map((r) => (

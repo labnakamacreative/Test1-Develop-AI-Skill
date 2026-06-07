@@ -8,7 +8,8 @@ import { Button, EmptyState, inputCls } from "../components/ui";
 const SLA_HOURS = 24;
 
 export function ApprovalInbox({ ctrl }: { ctrl: ModalControl }) {
-  const { items, config, currentUserId, updateItem } = useStore();
+  const { items, config, currentUserId, updateItem, can } = useStore();
+  const canApprove = can("approve");
   const [noteFor, setNoteFor] = useState<string | null>(null);
   const [note, setNote] = useState("");
 
@@ -75,7 +76,9 @@ export function ApprovalInbox({ ctrl }: { ctrl: ModalControl }) {
                   )}
                   <div className="mt-1 text-xs text-slate-400">Jadwal: {fmtDate(item.scheduledDate)}</div>
 
-                  {noteFor === item.id ? (
+                  {!canApprove ? (
+                    <div className="mt-3 text-xs text-amber-700">Hanya Manager ke atas yang bisa approve / minta revisi.</div>
+                  ) : noteFor === item.id ? (
                     <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                       <input className={inputCls} placeholder="Catatan revisi…" value={note} onChange={(e) => setNote(e.target.value)} autoFocus />
                       <div className="flex gap-2">
