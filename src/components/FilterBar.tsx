@@ -59,6 +59,17 @@ export function FilterBar({ filters, setFilters }: { filters: Filters; setFilter
         value={filters.search}
         onChange={(e) => set("search", e.target.value)}
       />
+      {campaigns.length > 0 && (
+        <select
+          className={`${sel} ${filters.campaign ? "border-indigo-400 text-indigo-700" : "text-slate-600"}`}
+          value={filters.campaign}
+          onChange={(e) => set("campaign", e.target.value)}
+          title="Filter per project"
+        >
+          <option value="">📁 Semua project</option>
+          {campaigns.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      )}
       <button className={`${sel} text-slate-600`} onClick={() => setOpen((o) => !o)}>
         Filter {open ? "▲" : "▼"}
       </button>
@@ -82,7 +93,7 @@ export function FilterBar({ filters, setFilters }: { filters: Filters; setFilter
             {config.members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
           <select className={sel} value={filters.campaign} onChange={(e) => set("campaign", e.target.value)}>
-            <option value="">Semua campaign</option>
+            <option value="">Semua project</option>
             {campaigns.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
           <select className={sel} value={filters.priority} onChange={(e) => set("priority", e.target.value)}>

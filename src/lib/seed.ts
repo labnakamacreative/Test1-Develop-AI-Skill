@@ -13,7 +13,7 @@ export const defaultConfig: BrandConfig = {
     { id: "u4", name: "Dani (SMO)", roles: ["smo", "analyst"], active: true },
   ],
   rolesEnabled: ["lead", "strategist", "creative", "copywriter", "designer", "editor", "smo", "analyst"],
-  approvalEnabled: false,
+  approvalEnabled: true,
   handoffTrackingEnabled: false,
   roleBasedViewsEnabled: false,
   bankHealthyMin: 5,

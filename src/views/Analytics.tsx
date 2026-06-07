@@ -5,6 +5,7 @@ import { GOAL_LABELS } from "../lib/constants";
 import { computeEngagement, fmtNum, memberName, showSalesFields } from "../lib/helpers";
 import { useStore } from "../lib/store";
 import { Card, EmptyState, StatCard } from "../components/ui";
+import { FalcoInsights } from "../components/FalcoInsights";
 
 export function Analytics({ ctrl }: { ctrl: ModalControl }) {
   const { items, config, createItem } = useStore();
@@ -90,6 +91,10 @@ export function Analytics({ ctrl }: { ctrl: ModalControl }) {
         ) : (
           <StatCard label="Konten dianalisis" value={published.length} />
         )}
+      </div>
+
+      <div className="mb-4">
+        <FalcoInsights />
       </div>
 
       {published.length === 0 ? (
