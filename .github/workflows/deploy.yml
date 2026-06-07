@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [claude/adoring-dirac-Obf6d]
+    branches: [main, claude/adoring-dirac-Obf6d]
   workflow_dispatch:
 
 permissions:
