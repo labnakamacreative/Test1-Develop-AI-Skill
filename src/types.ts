@@ -174,7 +174,10 @@ export interface TeamMember {
   name: string;
   roles: Role[];
   active: boolean;
+  accessLevel?: AccessLevel; // permission tier; undefined = treated as full access (legacy)
 }
+
+export type AccessLevel = "staff" | "manager" | "head" | "stakeholder";
 
 export interface Pillar {
   name: string;

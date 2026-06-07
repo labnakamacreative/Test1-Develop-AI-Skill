@@ -8,9 +8,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { AppState, Brand, BrandConfig, BrandType, ContentItem } from "../types";
+import type { AccessLevel, AppState, Brand, BrandConfig, BrandType, ContentItem } from "../types";
 import { generateId, makeActivity, nowISO, sweepExpiry } from "./helpers";
 import { DEFAULT_CONTENT_ASPECTS, defaultConfig, seedState } from "./seed";
+import { can as evalPermission, type Permission } from "./permissions";
 
 // ============================================================
 // DataStore abstraction (§9). v1 = localStorage. Swap this impl
@@ -95,6 +96,9 @@ interface StoreContextValue {
   createBrand: (name: string, type: BrandType) => Brand;
   updateBrandMeta: (id: string, patch: { name?: string; type?: BrandType; status?: Brand["status"] }) => void;
   deleteBrand: (id: string) => void;
+  // access control (current account)
+  currentAccessLevel: AccessLevel | undefined;
+  can: (p: Permission) => boolean;
   // import / export & reset
   replaceState: (state: AppState) => void;
   resetSeed: () => void;
@@ -271,6 +275,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const replaceState = useCallback<StoreContextValue["replaceState"]>((next) => setState(migrate(next)), []);
   const resetSeed = useCallback(() => setState(seedState()), []);
 
+  const currentAccessLevel = currentBrand.config.members.find((m) => m.id === state.currentUserId)?.accessLevel;
+  const can = useCallback((p: Permission) => evalPermission(currentAccessLevel, p), [currentAccessLevel]);
+
   const value = useMemo<StoreContextValue>(
     () => ({
       state,
@@ -289,10 +296,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       createBrand,
       updateBrandMeta,
       deleteBrand,
+      currentAccessLevel,
+      can,
       replaceState,
       resetSeed,
     }),
-    [state, currentBrand, setCurrentUser, createItem, updateItem, deleteItem, updateConfig, switchBrand, createBrand, updateBrandMeta, deleteBrand, replaceState, resetSeed],
+    [state, currentBrand, setCurrentUser, createItem, updateItem, deleteItem, updateConfig, switchBrand, createBrand, updateBrandMeta, deleteBrand, currentAccessLevel, can, replaceState, resetSeed],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

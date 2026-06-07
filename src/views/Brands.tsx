@@ -6,9 +6,11 @@ import { Button, Card, Field, inputCls } from "../components/ui";
 import type { ViewKey } from "../components/Sidebar";
 
 export function Brands({ setView }: { setView: (v: ViewKey) => void }) {
-  const { brands, currentBrandId, switchBrand, createBrand, updateBrandMeta, deleteBrand } = useStore();
+  const { brands, currentBrandId, switchBrand, createBrand, updateBrandMeta, deleteBrand, can } = useStore();
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<BrandType>("eksternal");
+  const canCreate = can("createBrand");
+  const canManage = can("manageBrand");
 
   const internal = brands.filter((b) => b.type === "internal");
   const eksternal = brands.filter((b) => b.type === "eksternal");
@@ -28,6 +30,11 @@ export function Brands({ setView }: { setView: (v: ViewKey) => void }) {
       </header>
 
       {/* create */}
+      {!canCreate ? (
+        <Card className="mb-5 border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          Akun ini (Staff) tidak punya akses membuat brand/project. Hubungi Manager ke atas.
+        </Card>
+      ) : (
       <Card className="mb-5 p-4">
         <h2 className="mb-2 text-sm font-semibold">Buat brand / project baru</h2>
         <div className="flex flex-wrap items-end gap-2">
@@ -45,9 +52,10 @@ export function Brands({ setView }: { setView: (v: ViewKey) => void }) {
           <Button onClick={add} disabled={!newName.trim()}>+ Buat</Button>
         </div>
       </Card>
+      )}
 
-      <Group title="Internal" brands={internal} currentBrandId={currentBrandId} switchBrand={switchBrand} setView={setView} updateBrandMeta={updateBrandMeta} deleteBrand={deleteBrand} canDelete={brands.length > 1} />
-      <Group title="Eksternal" brands={eksternal} currentBrandId={currentBrandId} switchBrand={switchBrand} setView={setView} updateBrandMeta={updateBrandMeta} deleteBrand={deleteBrand} canDelete={brands.length > 1} />
+      <Group title="Internal" brands={internal} currentBrandId={currentBrandId} switchBrand={switchBrand} setView={setView} updateBrandMeta={updateBrandMeta} deleteBrand={deleteBrand} canDelete={brands.length > 1 && canManage} canManage={canManage} />
+      <Group title="Eksternal" brands={eksternal} currentBrandId={currentBrandId} switchBrand={switchBrand} setView={setView} updateBrandMeta={updateBrandMeta} deleteBrand={deleteBrand} canDelete={brands.length > 1 && canManage} canManage={canManage} />
     </div>
   );
 }
@@ -61,6 +69,7 @@ function Group({
   updateBrandMeta,
   deleteBrand,
   canDelete,
+  canManage,
 }: {
   title: string;
   brands: Brand[];
@@ -70,6 +79,7 @@ function Group({
   updateBrandMeta: (id: string, patch: { name?: string; type?: BrandType; status?: Brand["status"] }) => void;
   deleteBrand: (id: string) => void;
   canDelete: boolean;
+  canManage: boolean;
 }) {
   return (
     <section className="mb-6">
@@ -86,8 +96,9 @@ function Group({
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <input
-                      className="w-full border-none bg-transparent text-base font-semibold text-slate-800 outline-none focus:bg-slate-50"
+                      className="w-full border-none bg-transparent text-base font-semibold text-slate-800 outline-none focus:bg-slate-50 disabled:cursor-default"
                       value={b.config.brandName}
+                      disabled={!canManage}
                       onChange={(e) => updateBrandMeta(b.id, { name: e.target.value })}
                     />
                     <div className="mt-0.5 text-xs capitalize text-slate-400">
@@ -104,20 +115,24 @@ function Group({
                   ) : (
                     <Button size="sm" onClick={() => { switchBrand(b.id); setView("dashboard"); }}>Buka</Button>
                   )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => updateBrandMeta(b.id, { status: b.status === "aktif" ? "nonaktif" : "aktif" })}
-                  >
-                    {b.status === "aktif" ? "Nonaktifkan" : "Aktifkan"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => updateBrandMeta(b.id, { type: b.type === "internal" ? "eksternal" : "internal" })}
-                  >
-                    Pindah ke {b.type === "internal" ? "Eksternal" : "Internal"}
-                  </Button>
+                  {canManage && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => updateBrandMeta(b.id, { status: b.status === "aktif" ? "nonaktif" : "aktif" })}
+                    >
+                      {b.status === "aktif" ? "Nonaktifkan" : "Aktifkan"}
+                    </Button>
+                  )}
+                  {canManage && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => updateBrandMeta(b.id, { type: b.type === "internal" ? "eksternal" : "internal" })}
+                    >
+                      Pindah ke {b.type === "internal" ? "Eksternal" : "Internal"}
+                    </Button>
+                  )}
                   {canDelete && (
                     <button
                       className="text-xs text-red-500 hover:underline"

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useStore } from "../lib/store";
 import { isOverdue } from "../lib/helpers";
+import { ACCESS_LABELS } from "../lib/permissions";
 
 export type ViewKey =
   | "dashboard"
@@ -24,6 +25,7 @@ interface NavItem {
 
 export function Sidebar({ view, setView }: { view: ViewKey; setView: (v: ViewKey) => void }) {
   const { config, items, currentUserId, setCurrentUser, brands, currentBrandId, currentBrand, switchBrand } = useStore();
+  const currentLevel = config.members.find((m) => m.id === currentUserId)?.accessLevel;
 
   const pendingApprovals = useMemo(
     () => items.filter((i) => i.approvalStatus === "pending").length,
@@ -94,18 +96,21 @@ export function Sidebar({ view, setView }: { view: ViewKey; setView: (v: ViewKey
         ))}
       </nav>
 
-      {config.roleBasedViewsEnabled && (
-        <div className="border-t border-slate-200 p-3">
-          <label className="mb-1 block text-xs text-slate-400">Login sebagai</label>
-          <select
-            className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-            value={currentUserId ?? ""}
-            onChange={(e) => setCurrentUser(e.target.value || null)}
-          >
-            {config.members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
+      <div className="border-t border-slate-200 p-3">
+        <div className="mb-1 flex items-center justify-between">
+          <label className="text-xs text-slate-400">Akun (login sebagai)</label>
+          {currentLevel && (
+            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{ACCESS_LABELS[currentLevel]}</span>
+          )}
         </div>
-      )}
+        <select
+          className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+          value={currentUserId ?? ""}
+          onChange={(e) => setCurrentUser(e.target.value || null)}
+        >
+          {config.members.map((m) => <option key={m.id} value={m.id}>{m.name}{m.accessLevel ? ` · ${ACCESS_LABELS[m.accessLevel]}` : ""}</option>)}
+        </select>
+      </div>
     </aside>
   );
 }

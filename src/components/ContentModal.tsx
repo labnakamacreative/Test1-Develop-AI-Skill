@@ -31,7 +31,7 @@ interface Props {
 }
 
 export function ContentModal({ itemId, onClose }: Props) {
-  const { items, config, createItem, updateItem, deleteItem } = useStore();
+  const { items, config, createItem, updateItem, deleteItem, can } = useStore();
   const existing = useMemo(() => items.find((i) => i.id === itemId) ?? null, [items, itemId]);
 
   const [draft, setDraft] = useState<ContentItem | null>(null);
@@ -476,7 +476,9 @@ export function ContentModal({ itemId, onClose }: Props) {
 
         {/* footer */}
         <div className="flex items-center justify-between gap-2 border-t border-slate-200 p-4">
-          <Button variant="ghost" onClick={handleDelete} className="text-red-600 hover:bg-red-50">Hapus</Button>
+          {can("deleteContent") ? (
+            <Button variant="ghost" onClick={handleDelete} className="text-red-600 hover:bg-red-50">Hapus</Button>
+          ) : <span />}
           <div className="flex items-center gap-2">
             {nextStage(draft.stage) && (
               <Button variant="outline" onClick={advance}>
