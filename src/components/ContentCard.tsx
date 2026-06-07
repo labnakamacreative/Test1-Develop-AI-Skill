@@ -51,7 +51,7 @@ export function ContentCard({
           {expiryDays < 0 ? "Expired" : `Expiry ${expiryDays} hari`}
         </div>
       )}
-      {item.needsApproval && item.approvalStatus === "pending" && (
+      {config.approvalEnabled && item.needsApproval && item.approvalStatus === "pending" && (
         <div className="mt-1 text-[11px] font-medium text-orange-600">⏳ Menunggu approval</div>
       )}
     </div>

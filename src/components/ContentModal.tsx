@@ -209,7 +209,7 @@ export function ContentModal({ itemId, onClose }: Props) {
         <div className="max-h-[55vh] overflow-y-auto p-4 thin-scroll">
           {tab === "detail" && (
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Campaign / Project">
+              <Field label="Project / Campaign">
                 <input className={inputCls} value={draft.campaign ?? ""} onChange={(e) => set("campaign", e.target.value)} />
               </Field>
               <Field label="Pillar">
