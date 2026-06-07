@@ -11,6 +11,7 @@ import { MyQueue } from "./views/MyQueue";
 import { Analytics } from "./views/Analytics";
 import { ApprovalInbox } from "./views/ApprovalInbox";
 import { Settings } from "./views/Settings";
+import { Brands } from "./views/Brands";
 import type { ModalControl } from "./viewTypes";
 
 function Shell() {
@@ -29,6 +30,7 @@ function Shell() {
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-7xl p-6">
           {view === "dashboard" && <Dashboard ctrl={ctrl} setView={setView} />}
+          {view === "brands" && <Brands setView={setView} />}
           {view === "board" && <Board ctrl={ctrl} />}
           {view === "calendar" && <CalendarView ctrl={ctrl} />}
           {view === "bank" && <Bank ctrl={ctrl} />}

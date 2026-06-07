@@ -322,10 +322,42 @@ export function seedItems(): ContentItem[] {
   ];
 }
 
-export function seedState(): AppState {
+import type { Brand, BrandType, Goal, Industry } from "../types";
+
+function configFor(name: string, industry: Industry, goals: Goal[]): BrandConfig {
   return {
-    config: defaultConfig,
-    items: seedItems(),
+    ...defaultConfig,
+    brandName: name,
+    industry,
+    primaryGoals: goals,
+    contentAspects: DEFAULT_CONTENT_ASPECTS,
+  };
+}
+
+function makeBrand(
+  id: string,
+  name: string,
+  type: BrandType,
+  industry: Industry,
+  goals: Goal[],
+  items: ContentItem[],
+): Brand {
+  return { id, type, status: "aktif", config: configFor(name, industry, goals), items };
+}
+
+export function seedState(): AppState {
+  const brands: Brand[] = [
+    // Eksternal — Azarine holds the rich Falco demo content (skincare/beauty)
+    makeBrand("b_azarine", "Azarine", "eksternal", "beauty", ["awareness", "engagement"], seedItems()),
+    makeBrand("b_cave", "Cave", "eksternal", "fnb", ["awareness", "community"], []),
+    // Internal
+    makeBrand("b_pbk", "PBK", "internal", "umum", ["awareness", "sales"], []),
+    makeBrand("b_nakama", "Nakama Creative Lab", "internal", "tech", ["awareness", "leads"], []),
+    makeBrand("b_insightory", "Insightory", "internal", "jasa", ["leads", "community"], []),
+  ];
+  return {
+    brands,
+    currentBrandId: "b_azarine",
     currentUserId: "u1",
   };
 }

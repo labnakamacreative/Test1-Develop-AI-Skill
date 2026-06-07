@@ -48,12 +48,25 @@ export function FalcoInsights() {
     return Array.from(s).sort().reverse();
   }, [items]);
 
-  const scoped = useMemo(
-    () => (period === "all" ? items : items.filter((i) => (i.scheduledDate ?? i.createdAt ?? "").slice(0, 7) === period)),
-    [items, period],
-  );
+  const scoped = useMemo(() => {
+    const dateOf = (i: typeof items[number]) => (i.scheduledDate ?? i.createdAt ?? "").slice(0, 10);
+    if (period === "all") return items;
+    if (period === "30d" || period === "90d") {
+      const days = period === "30d" ? 30 : 90;
+      const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+      return items.filter((i) => dateOf(i) >= cutoff);
+    }
+    return items.filter((i) => dateOf(i).slice(0, 7) === period);
+  }, [items, period]);
 
-  const periodLabel = period === "all" ? "Semua periode" : new Date(period + "-01").toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+  const periodLabel =
+    period === "all"
+      ? "Semua periode"
+      : period === "30d"
+        ? "30 hari terakhir"
+        : period === "90d"
+          ? "90 hari terakhir"
+          : new Date(period + "-01").toLocaleDateString("id-ID", { month: "long", year: "numeric" });
 
   const report = useMemo(
     () => buildFalcoReport(scoped, config, { topN, patternMetricIds, periodLabel }),
@@ -81,9 +94,15 @@ export function FalcoInsights() {
         <div className="flex flex-wrap items-center gap-2">
           <select className={sel} value={period} onChange={(e) => setPeriod(e.target.value)} title="Periode">
             <option value="all">📅 Semua periode</option>
-            {months.map((m) => (
-              <option key={m} value={m}>{new Date(m + "-01").toLocaleDateString("id-ID", { month: "long", year: "numeric" })}</option>
-            ))}
+            <option value="30d">30 hari terakhir</option>
+            <option value="90d">90 hari terakhir</option>
+            {months.length > 0 && (
+              <optgroup label="Per bulan">
+                {months.map((m) => (
+                  <option key={m} value={m}>{new Date(m + "-01").toLocaleDateString("id-ID", { month: "long", year: "numeric" })}</option>
+                ))}
+              </optgroup>
+            )}
           </select>
           <div className="flex rounded-lg border border-slate-300 p-0.5 text-sm">
             {[3, 5].map((nn) => (

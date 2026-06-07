@@ -4,6 +4,7 @@ import { isOverdue } from "../lib/helpers";
 
 export type ViewKey =
   | "dashboard"
+  | "brands"
   | "board"
   | "calendar"
   | "bank"
@@ -22,7 +23,7 @@ interface NavItem {
 }
 
 export function Sidebar({ view, setView }: { view: ViewKey; setView: (v: ViewKey) => void }) {
-  const { config, items, currentUserId, setCurrentUser } = useStore();
+  const { config, items, currentUserId, setCurrentUser, brands, currentBrandId, currentBrand, switchBrand } = useStore();
 
   const pendingApprovals = useMemo(
     () => items.filter((i) => i.approvalStatus === "pending").length,
@@ -36,6 +37,7 @@ export function Sidebar({ view, setView }: { view: ViewKey; setView: (v: ViewKey
 
   const nav: NavItem[] = [
     { key: "dashboard", label: "Dashboard", icon: "🏠" },
+    { key: "brands", label: "Brand / Project", icon: "🏢" },
     { key: "board", label: "Board", icon: "🗂️", badge: overdueCount || undefined },
     { key: "calendar", label: "Calendar", icon: "📅" },
     { key: "bank", label: "Content Bank", icon: "🏦" },
@@ -49,9 +51,29 @@ export function Sidebar({ view, setView }: { view: ViewKey; setView: (v: ViewKey
   return (
     <aside className="flex w-60 flex-col border-r border-slate-200 bg-white">
       <div className="border-b border-slate-200 p-4">
-        <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Dashboard</div>
-        <div className="truncate text-lg font-bold text-slate-800">{config.brandName}</div>
-        <div className="mt-0.5 text-xs capitalize text-slate-400">{config.industry} · {config.members.length} anggota</div>
+        <div className="mb-1 flex items-center justify-between">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Brand aktif</span>
+          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${currentBrand.type === "internal" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>
+            {currentBrand.type}
+          </span>
+        </div>
+        <select
+          className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-800"
+          value={currentBrandId}
+          onChange={(e) => switchBrand(e.target.value)}
+        >
+          <optgroup label="Internal">
+            {brands.filter((b) => b.type === "internal").map((b) => (
+              <option key={b.id} value={b.id}>{b.config.brandName}{b.status === "nonaktif" ? " (nonaktif)" : ""}</option>
+            ))}
+          </optgroup>
+          <optgroup label="Eksternal">
+            {brands.filter((b) => b.type === "eksternal").map((b) => (
+              <option key={b.id} value={b.id}>{b.config.brandName}{b.status === "nonaktif" ? " (nonaktif)" : ""}</option>
+            ))}
+          </optgroup>
+        </select>
+        <div className="mt-1 text-xs capitalize text-slate-400">{config.industry} · {config.members.length} anggota</div>
       </div>
 
       <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
