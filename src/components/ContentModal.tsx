@@ -35,7 +35,7 @@ export function ContentModal({ itemId, onClose }: Props) {
   const existing = useMemo(() => items.find((i) => i.id === itemId) ?? null, [items, itemId]);
 
   const [draft, setDraft] = useState<ContentItem | null>(null);
-  const [tab, setTab] = useState<"detail" | "brief" | "produksi" | "hasil" | "log">("detail");
+  const [tab, setTab] = useState<"detail" | "brief" | "produksi" | "aspek" | "hasil" | "log">("detail");
   const [warn, setWarn] = useState<string | null>(null);
 
   useEffect(() => {
@@ -62,6 +62,9 @@ export function ContentModal({ itemId, onClose }: Props) {
 
   const set = <K extends keyof ContentItem>(key: K, value: ContentItem[K]) =>
     setDraft((d) => (d ? { ...d, [key]: value } : d));
+
+  const setAspect = (key: string, value: string) =>
+    setDraft((d) => (d ? { ...d, aspects: { ...(d.aspects ?? {}), [key]: value } } : d));
 
   const save = (extraAction?: string) => {
     if (!draft) return;
@@ -193,7 +196,7 @@ export function ContentModal({ itemId, onClose }: Props) {
 
         {/* tabs */}
         <div className="flex gap-1 border-b border-slate-200 px-4 pt-2">
-          {(["detail", "brief", "produksi", "hasil", "log"] as const).map((t) => (
+          {(["detail", "brief", "produksi", "aspek", "hasil", "log"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -387,6 +390,29 @@ export function ContentModal({ itemId, onClose }: Props) {
             </div>
           )}
 
+          {tab === "aspek" && (
+            <div className="space-y-4">
+              <p className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-500">
+                Aspek konten dipakai Falco untuk Pattern Analysis. Isi sekonsisten mungkin (mis. talent "laki-laki"/"perempuan", konsep "interview"/"tutorial"). Daftar aspek bisa diatur di Settings.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Durasi video (detik)">
+                  <input type="number" className={inputCls} value={draft.durationSec ?? ""} onChange={(e) => set("durationSec", e.target.value ? Number(e.target.value) : undefined)} />
+                </Field>
+                <Field label="Jumlah slide (carousel)">
+                  <input type="number" className={inputCls} value={draft.slideCount ?? ""} onChange={(e) => set("slideCount", e.target.value ? Number(e.target.value) : undefined)} />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {config.contentAspects.map((a) => (
+                  <Field key={a.key} label={a.label}>
+                    <input className={inputCls} value={draft.aspects?.[a.key] ?? ""} onChange={(e) => setAspect(a.key, e.target.value)} />
+                  </Field>
+                ))}
+              </div>
+            </div>
+          )}
+
           {tab === "hasil" && (
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
@@ -411,6 +437,21 @@ export function ContentModal({ itemId, onClose }: Props) {
                       />
                     </Field>
                   ))}
+              </div>
+              <div>
+                <div className="mb-1 text-xs font-medium text-slate-600">Retention rate (%) per detik & profile visits</div>
+                <div className="grid grid-cols-3 gap-3">
+                  {(["retention1s", "retention2s", "retention3s", "retention4s", "retention5s", "profileVisits"] as const).map((k) => (
+                    <Field key={k} label={k.replace("retention", "ret@").replace("s", "s").replace("profileVisits", "profile visits")}>
+                      <input
+                        type="number"
+                        className={inputCls}
+                        value={draft.results?.[k] ?? ""}
+                        onChange={(e) => set("results", { ...draft.results, [k]: e.target.value ? Number(e.target.value) : undefined })}
+                      />
+                    </Field>
+                  ))}
+                </div>
               </div>
               <Field label="Insight (1 kalimat pelajaran → input ide berikutnya)">
                 <textarea className={inputCls} rows={2} value={draft.insight ?? ""} onChange={(e) => set("insight", e.target.value)} />

@@ -65,6 +65,13 @@ export interface ContentResults {
   reach?: number;
   linkClicks?: number;
   conversions?: number;
+  profileVisits?: number;
+  // retention rate (%) at second N — key for hook quality analysis
+  retention1s?: number;
+  retention2s?: number;
+  retention3s?: number;
+  retention4s?: number;
+  retention5s?: number;
 }
 
 export interface ContentBrief {
@@ -95,6 +102,11 @@ export interface ContentItem {
   brief: ContentBrief;
   copy: string;
   assetLinks: string[];
+
+  // content aspects for pattern analysis (Falco); keys follow BrandConfig.contentAspects
+  aspects?: Record<string, string>;
+  durationSec?: number;
+  slideCount?: number;
 
   // ownership & handoff
   currentPIC: string | null;
@@ -190,6 +202,9 @@ export interface BrandConfig {
   hashtagSets: { pillar: string; tags: string[] }[];
   postingTimes: { channel: Channel; times: string[] }[];
   brandGuidelineUrl?: string;
+
+  // Content aspects the brand tracks (powers Falco pattern analysis). Editable in Settings.
+  contentAspects: { key: string; label: string }[];
 }
 
 export interface AppState {

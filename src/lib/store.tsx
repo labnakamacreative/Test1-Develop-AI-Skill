@@ -10,7 +10,7 @@ import {
 } from "react";
 import type { AppState, BrandConfig, ContentItem } from "../types";
 import { generateId, makeActivity, nowISO, sweepExpiry } from "./helpers";
-import { seedState } from "./seed";
+import { DEFAULT_CONTENT_ASPECTS, seedState } from "./seed";
 
 // ============================================================
 // DataStore abstraction (§9). v1 = localStorage. Swap this impl
@@ -68,7 +68,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const store = localStorageDataStore;
   const [state, setState] = useState<AppState>(() => {
     const loaded = store.load();
-    return loaded ?? seedState();
+    if (!loaded) return seedState();
+    // migrate older saved states that predate content aspects
+    if (!loaded.config.contentAspects) {
+      loaded.config.contentAspects = DEFAULT_CONTENT_ASPECTS;
+    }
+    return loaded;
   });
   const didSweep = useRef(false);
 
@@ -110,6 +115,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         brief: partial.brief ?? { objective: "", keyMessage: "", reference: "" },
         copy: partial.copy ?? "",
         assetLinks: partial.assetLinks ?? [],
+        aspects: partial.aspects ?? {},
+        durationSec: partial.durationSec,
+        slideCount: partial.slideCount,
         currentPIC: partial.currentPIC ?? null,
         assignments: partial.assignments ?? {},
         receivedAt: partial.receivedAt,

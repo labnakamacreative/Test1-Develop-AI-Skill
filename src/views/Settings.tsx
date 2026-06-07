@@ -203,6 +203,43 @@ export function Settings() {
           </div>
         </Card>
 
+        {/* Content aspects (Falco pattern analysis) */}
+        <Card className="p-4">
+          <h2 className="mb-1 text-sm font-semibold">Aspek Konten (untuk Analisis Falco)</h2>
+          <p className="mb-3 text-xs text-slate-400">Dimensi yang dibaca Falco untuk Pattern Analysis. Muncul sebagai field di tab "Aspek" tiap konten.</p>
+          <div className="space-y-2">
+            {(config.contentAspects ?? []).map((a, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <input
+                  className={`${inputCls} flex-1`}
+                  value={a.label}
+                  onChange={(e) => {
+                    const next = [...config.contentAspects];
+                    next[idx] = { ...a, label: e.target.value };
+                    updateConfig({ contentAspects: next });
+                  }}
+                />
+                <span className="font-mono text-[10px] text-slate-400">{a.key}</span>
+                <button className="text-xs text-red-500" onClick={() => updateConfig({ contentAspects: config.contentAspects.filter((_, i) => i !== idx) })}>✕</button>
+              </div>
+            ))}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                updateConfig({
+                  contentAspects: [
+                    ...(config.contentAspects ?? []),
+                    { key: "aspek" + ((config.contentAspects?.length ?? 0) + 1), label: "Aspek baru" },
+                  ],
+                })
+              }
+            >
+              + Aspek
+            </Button>
+          </div>
+        </Card>
+
         {/* Bank params */}
         <Card className="p-4">
           <h2 className="mb-3 text-sm font-semibold">Parameter Bank</h2>

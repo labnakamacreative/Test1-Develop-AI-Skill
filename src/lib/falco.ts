@@ -1,296 +1,401 @@
 import type { BrandConfig, ContentItem } from "../types";
 import { computeEngagement, fmtNum } from "./helpers";
-import { CHANNEL_LABELS, FORMATS, FORMAT_LABELS } from "./constants";
+import { CHANNEL_LABELS, FORMAT_LABELS } from "./constants";
 
 // ============================================================
 // Falco — automated social-media analysis engine.
-// Implements the Falco analyst frameworks (6-step analysis,
-// pattern recognition, anti-generic rules) as deterministic,
-// data-grounded computation over the Content Item collection.
-// Every statement references real numbers; confidence is labelled
-// (KUAT / MODERAT / HIPOTESIS) and small samples are flagged.
+// Implements the NCL/Falco framework: Overview → Top&Worst →
+// Pattern Analysis (per metric grouping, per content aspect) →
+// Kesimpulan → Saran. Every statement is data-grounded; factors
+// are labelled RELASIONAL / NON-RELASIONAL / HIPOTESIS.
 // ============================================================
+
+export type Tag =
+  | "RELASIONAL"
+  | "NON-RELASIONAL"
+  | "KORELASI"
+  | "HIPOTESIS"
+  | "KUAT"
+  | "ANOMALI"
+  | "PELUANG";
 
 export interface FalcoLine {
   text: string;
-  tag?: "RELASIONAL" | "KORELASI" | "HIPOTESIS" | "KUAT" | "MODERAT" | "ANOMALI" | "PELUANG";
+  tag?: Tag;
 }
 
-export interface FalcoRanking {
-  metric: string;
-  rows: { id: string; title: string; value: string }[];
+export interface RankRow {
+  id: string;
+  title: string;
+  value: string;
+}
+
+export interface MetricRanking {
+  metricId: string;
+  metricLabel: string;
+  top: RankRow[];
+  worst: RankRow[];
+}
+
+export interface PatternGroup {
+  key: string; // "Top 3 by Views"
+  kind: "top" | "worst";
+  metricLabel: string;
+  members: { id: string; title: string }[];
+  lines: FalcoLine[];
 }
 
 export interface FalcoReport {
-  n: number; // analysed (with results)
+  n: number;
   totalItems: number;
+  topN: number;
+  periodLabel: string;
   warning?: string;
   overview: FalcoLine[];
-  rankings: FalcoRanking[];
-  patterns: FalcoLine[];
-  anomalies: FalcoLine[];
-  absences: FalcoLine[];
+  rankings: MetricRanking[];
+  patternGroups: PatternGroup[];
   conclusions: FalcoLine[];
-  recommendations: FalcoLine[];
+  recommendationsData: FalcoLine[];
+  recommendationsExplore: FalcoLine[];
+  availableMetrics: { id: string; label: string }[];
+}
+
+export interface FalcoOptions {
+  topN: number; // 3 or 5
+  patternMetricIds: string[];
+  periodLabel: string;
 }
 
 const mean = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
-const std = (a: number[]) => {
-  if (a.length < 2) return 0;
-  const m = mean(a);
-  return Math.sqrt(mean(a.map((x) => (x - m) ** 2)));
-};
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
-function hasResults(i: ContentItem): boolean {
-  return Boolean(i.results && ((i.results.views ?? 0) > 0 || computeEngagement(i) > 0));
+// ----- metric definitions -----
+interface Metric {
+  id: string;
+  label: string;
+  get: (i: ContentItem) => number | undefined;
+  fmt: (v: number) => string;
 }
 
-// ----- factor extractors (the dimensions Falco reads patterns from) -----
-function hookBucket(i: ContentItem): string {
-  const w = i.hook.trim() ? i.hook.trim().split(/\s+/).length : 0;
+const METRICS: Metric[] = [
+  { id: "views", label: "Views", get: (i) => i.results?.views, fmt: (v) => `${fmtNum(v)} views` },
+  { id: "likes", label: "Likes", get: (i) => i.results?.likes, fmt: (v) => `${fmtNum(v)} likes` },
+  { id: "comments", label: "Comments", get: (i) => i.results?.comments, fmt: (v) => `${fmtNum(v)} comments` },
+  { id: "shares", label: "Shares", get: (i) => i.results?.shares, fmt: (v) => `${fmtNum(v)} shares` },
+  { id: "saves", label: "Saves", get: (i) => i.results?.saves, fmt: (v) => `${fmtNum(v)} saves` },
+  {
+    id: "er",
+    label: "Engagement Rate",
+    get: (i) => ((i.results?.reach ?? 0) > 0 ? (computeEngagement(i) / (i.results!.reach as number)) * 100 : undefined),
+    fmt: (v) => `${round1(v)}% ER`,
+  },
+  { id: "ret1", label: "Retention @1s", get: (i) => i.results?.retention1s, fmt: (v) => `${round1(v)}% ret@1s` },
+];
+
+// ----- aspect dimensions (built-in + brand-configured) -----
+interface Dim {
+  key: string;
+  label: string;
+  get: (i: ContentItem) => string | undefined;
+}
+
+function durBucket(s?: number): string | undefined {
+  if (!s || s <= 0) return undefined;
+  if (s <= 15) return "≤15 detik";
+  if (s <= 30) return "16–30 detik";
+  if (s <= 60) return "31–60 detik";
+  return ">60 detik";
+}
+function slideBucket(s?: number): string | undefined {
+  if (!s || s <= 0) return undefined;
+  if (s <= 5) return "≤5 slide";
+  if (s <= 8) return "6–8 slide";
+  return ">8 slide";
+}
+function hookLenBucket(h: string): string | undefined {
+  const w = h.trim() ? h.trim().split(/\s+/).length : 0;
   if (w === 0) return "tanpa hook";
   if (w <= 8) return "hook pendek (≤8 kata)";
   if (w <= 15) return "hook sedang (9–15 kata)";
   return "hook panjang (>15 kata)";
 }
 
-interface Factor {
-  label: string;
-  get: (i: ContentItem) => string;
+function dimensions(config: BrandConfig): Dim[] {
+  const builtins: Dim[] = [
+    { key: "format", label: "Format", get: (i) => FORMAT_LABELS[i.format] },
+    { key: "platform", label: "Platform", get: (i) => i.channel.map((c) => CHANNEL_LABELS[c]).join("+") },
+    { key: "contentType", label: "Tipe konten", get: (i) => i.contentType },
+    { key: "pillar", label: "Pillar", get: (i) => i.pillar },
+    { key: "durasi", label: "Durasi", get: (i) => durBucket(i.durationSec) },
+    { key: "slide", label: "Jumlah slide", get: (i) => slideBucket(i.slideCount) },
+    { key: "hookLen", label: "Panjang hook", get: (i) => hookLenBucket(i.hook) },
+  ];
+  const configured: Dim[] = (config.contentAspects ?? []).map((a) => ({
+    key: `aspect_${a.key}`,
+    label: a.label,
+    get: (i: ContentItem) => i.aspects?.[a.key] || undefined,
+  }));
+  return [...builtins, ...configured];
 }
 
-const FACTORS: Factor[] = [
-  { label: "Format", get: (i) => FORMAT_LABELS[i.format] },
-  { label: "Pillar", get: (i) => i.pillar },
-  { label: "Channel", get: (i) => i.channel.map((c) => CHANNEL_LABELS[c]).join("+") },
-  { label: "Tipe konten", get: (i) => i.contentType },
-  { label: "Hook", get: hookBucket },
-];
-
-function confidence(support: number, sample: number): "KUAT" | "MODERAT" | "HIPOTESIS" {
-  if (sample < 5) return "HIPOTESIS";
-  const r = support / sample;
-  if (r >= 0.8) return "KUAT";
-  if (r >= 0.6) return "MODERAT";
-  return "HIPOTESIS";
+function mode(vals: string[]): { value: string; count: number } | null {
+  if (!vals.length) return null;
+  const m = new Map<string, number>();
+  for (const v of vals) m.set(v, (m.get(v) ?? 0) + 1);
+  let value = "";
+  let count = 0;
+  for (const [v, n] of m) if (n > count) { value = v; count = n; }
+  return { value, count };
 }
 
-export function buildFalcoReport(items: ContentItem[], config: BrandConfig): FalcoReport {
+function hasResults(i: ContentItem): boolean {
+  return Boolean(i.results && ((i.results.views ?? 0) > 0 || computeEngagement(i) > 0 || (i.results.retention1s ?? 0) > 0));
+}
+
+export function buildFalcoReport(items: ContentItem[], config: BrandConfig, opts: FalcoOptions): FalcoReport {
   const analyzed = items.filter(hasResults);
   const n = analyzed.length;
+  const dims = dimensions(config);
 
   const report: FalcoReport = {
     n,
     totalItems: items.length,
+    topN: opts.topN,
+    periodLabel: opts.periodLabel,
     overview: [],
     rankings: [],
-    patterns: [],
-    anomalies: [],
-    absences: [],
+    patternGroups: [],
     conclusions: [],
-    recommendations: [],
+    recommendationsData: [],
+    recommendationsExplore: [],
+    availableMetrics: [],
   };
 
+  // available metrics (≥2 items with a value)
+  const available = METRICS.filter((m) => analyzed.filter((i) => (m.get(i) ?? 0) > 0).length >= 2);
+  report.availableMetrics = available.map((m) => ({ id: m.id, label: m.label }));
+
   if (n === 0) {
-    report.warning =
-      "Falco tidak menganalisis tanpa data. Isi metrik di tab Hasil pada konten yang sudah tayang, lalu analisis akan muncul di sini.";
-    // still surface absence (untapped formats/pillars) from the whole collection
-    report.absences = computeAbsences(items, config);
+    report.warning = "Falco tidak menganalisis tanpa data. Isi metrik (tab Hasil) pada konten yang sudah tayang.";
+    report.recommendationsExplore = computeAbsences(items, config);
     return report;
   }
-
   if (n < 5) {
-    report.warning = `Sample sangat kecil (${n} konten ber-hasil). Semua temuan di bawah berstatus HIPOTESIS — validasi di periode berikutnya saat data ≥ 30 konten.`;
+    report.warning = `Sample kecil (${n} konten). Pattern berstatus HIPOTESIS — validasi saat data ≥ 30 konten (standar Falco).`;
   } else if (n < 30) {
-    report.warning = `Dengan ${n} konten, pattern perlu divalidasi di periode berikutnya (idealnya ≥ 30 konten untuk analisis kuat).`;
+    report.warning = `Dengan ${n} konten, pattern perlu validasi periode berikutnya (idealnya ≥ 30 konten).`;
   }
 
-  // ---------- Step 1: OVERVIEW ----------
+  // ---------- OVERVIEW ----------
   const totalViews = analyzed.reduce((s, i) => s + (i.results?.views ?? 0), 0);
   const totalEng = analyzed.reduce((s, i) => s + computeEngagement(i), 0);
   const withReach = analyzed.filter((i) => (i.results?.reach ?? 0) > 0);
-  const avgER = withReach.length
-    ? mean(withReach.map((i) => (computeEngagement(i) / (i.results!.reach ?? 1)) * 100))
-    : null;
-  report.overview.push({ text: `${n} konten dianalisis (dari ${items.length} total konten).` });
+  const avgER = withReach.length ? mean(withReach.map((i) => (computeEngagement(i) / (i.results!.reach as number)) * 100)) : null;
+  const withRet = analyzed.filter((i) => (i.results?.retention1s ?? 0) > 0);
+  const avgRet = withRet.length ? mean(withRet.map((i) => i.results!.retention1s as number)) : null;
+  report.overview.push({ text: `${n} konten ber-hasil dianalisis (dari ${items.length} total) — periode: ${opts.periodLabel}.` });
   report.overview.push({
-    text: `Total ${fmtNum(totalViews)} views · ${fmtNum(totalEng)} engagement${avgER !== null ? ` · ER rata-rata ${round1(avgER)}%` : ""}.`,
+    text: `Total ${fmtNum(totalViews)} views · ${fmtNum(totalEng)} engagement${avgER !== null ? ` · ER rata-rata ${round1(avgER)}%` : ""}${avgRet !== null ? ` · retention@1s rata-rata ${round1(avgRet)}%` : ""}.`,
   });
-  // Pareto distribution
-  const byViews = [...analyzed].filter((i) => (i.results?.views ?? 0) > 0).sort((a, b) => (b.results!.views ?? 0) - (a.results!.views ?? 0));
+  // Pareto
+  const byViews = analyzed.filter((i) => (i.results?.views ?? 0) > 0).sort((a, b) => (b.results!.views ?? 0) - (a.results!.views ?? 0));
   if (byViews.length >= 3 && totalViews > 0) {
-    let cum = 0;
-    let k = 0;
-    for (const i of byViews) {
-      cum += i.results!.views ?? 0;
-      k++;
-      if (cum >= totalViews * 0.8) break;
-    }
+    let cum = 0, k = 0;
+    for (const i of byViews) { cum += i.results!.views ?? 0; k++; if (cum >= totalViews * 0.8) break; }
     const pct = Math.round((k / byViews.length) * 100);
-    report.overview.push({
-      text: `Distribusi Pareto: ${k} konten teratas (${pct}%) menyumbang 80% total views — performa ${pct <= 35 ? "terkonsentrasi di sedikit konten" : "relatif terdistribusi"}.`,
-    });
+    report.overview.push({ text: `Distribusi Pareto: ${k} konten teratas (${pct}%) menyumbang 80% total views — ${pct <= 35 ? "performa terkonsentrasi di sedikit konten" : "relatif terdistribusi"}.` });
   }
 
-  // ---------- Step 3: RANKING (multi-metrik) ----------
-  const topCount = Math.min(3, n);
-  const rankMetrics: { metric: string; val: (i: ContentItem) => number; fmt: (i: ContentItem) => string }[] = [
-    { metric: "Views", val: (i) => i.results?.views ?? 0, fmt: (i) => `${fmtNum(i.results?.views)} views` },
-    { metric: "Engagement", val: (i) => computeEngagement(i), fmt: (i) => `${fmtNum(computeEngagement(i))} eng` },
-    { metric: "Shares", val: (i) => i.results?.shares ?? 0, fmt: (i) => `${fmtNum(i.results?.shares)} shares` },
-  ];
-  for (const rm of rankMetrics) {
-    const sorted = [...analyzed].filter((i) => rm.val(i) > 0).sort((a, b) => rm.val(b) - rm.val(a));
-    if (sorted.length === 0) continue;
+  // ---------- RANKING (semua metrik tersedia) ----------
+  const topN = opts.topN;
+  for (const m of available) {
+    const sorted = analyzed.filter((i) => (m.get(i) ?? 0) > 0).sort((a, b) => (m.get(b) as number) - (m.get(a) as number));
+    if (sorted.length < 2) continue;
     report.rankings.push({
-      metric: rm.metric,
-      rows: sorted.slice(0, topCount).map((i) => ({ id: i.id, title: i.title, value: rm.fmt(i) })),
+      metricId: m.id,
+      metricLabel: m.label,
+      top: sorted.slice(0, topN).map((i) => ({ id: i.id, title: i.title, value: m.fmt(m.get(i) as number) })),
+      worst: sorted.slice(-topN).reverse().map((i) => ({ id: i.id, title: i.title, value: m.fmt(m.get(i) as number) })),
     });
   }
 
-  // ---------- Step 4: PATTERN ANALYSIS ----------
-  // top group = top tercile by engagement (min 2)
-  const byEng = [...analyzed].sort((a, b) => computeEngagement(b) - computeEngagement(a));
-  const topSize = Math.max(2, Math.round(n / 3));
-  const topGroup = byEng.slice(0, Math.min(topSize, n));
+  // ---------- PATTERN ANALYSIS ----------
+  const patternMetrics = available.filter((m) => opts.patternMetricIds.includes(m.id));
+  // pre-compute dominant top/worst value per metric per dimension (for relational tagging)
+  const groupMembers = (m: Metric, kind: "top" | "worst") => {
+    const sorted = analyzed.filter((i) => (m.get(i) ?? 0) > 0).sort((a, b) => (m.get(b) as number) - (m.get(a) as number));
+    return kind === "top" ? sorted.slice(0, topN) : sorted.slice(-topN).reverse();
+  };
+  const domOf = (members: ContentItem[], d: Dim) => mode(members.map(d.get).filter((x): x is string => Boolean(x)));
 
-  // (a) recurring pattern: a factor value shared by most of the top group
-  for (const f of FACTORS) {
-    const counts = new Map<string, number>();
-    for (const i of topGroup) counts.set(f.get(i), (counts.get(f.get(i)) ?? 0) + 1);
-    const [val, c] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0] ?? ["", 0];
-    if (c >= 2 && c / topGroup.length >= 0.6) {
-      report.patterns.push({
-        text: `${c} dari ${topGroup.length} konten top punya ${f.label.toLowerCase()} "${val}".`,
-        tag: confidence(c, topGroup.length),
+  for (const m of patternMetrics) {
+    for (const kind of ["top", "worst"] as const) {
+      const members = groupMembers(m, kind);
+      if (members.length === 0) continue;
+      const counterpart = groupMembers(m, kind === "top" ? "worst" : "top");
+      const groupLabel = `${kind === "top" ? "Top" : "Worst"} ${members.length} by ${m.label}`;
+      const lines: FalcoLine[] = [];
+      for (const d of dims) {
+        const vals = members.map(d.get).filter((x): x is string => Boolean(x));
+        const dom = mode(vals);
+        if (!dom || vals.length < 2) continue; // need ≥2 with data to call a pattern
+        const counter = domOf(counterpart, d);
+        let tag: Tag;
+        if (n < 5) tag = "HIPOTESIS";
+        else if (counter && counter.value === dom.value) tag = "NON-RELASIONAL";
+        else if (counter && counter.value !== dom.value && dom.count / vals.length >= 0.6) tag = "RELASIONAL";
+        else tag = "KORELASI";
+        lines.push({
+          text: `${dom.count} dari ${vals.length} ${groupLabel} — dari segi ${d.label}: "${dom.value}".`,
+          tag,
+        });
+      }
+      report.patternGroups.push({
+        key: groupLabel,
+        kind,
+        metricLabel: m.label,
+        members: members.map((i) => ({ id: i.id, title: i.title })),
+        lines,
       });
     }
   }
 
-  // (b) per-factor average comparison (value vs the rest), strongest first
-  const factorFindings: { line: FalcoLine; ratio: number }[] = [];
-  for (const f of FACTORS) {
-    const groups = new Map<string, number[]>();
-    for (const i of analyzed) {
-      const v = f.get(i);
-      if (!groups.has(v)) groups.set(v, []);
-      groups.get(v)!.push(computeEngagement(i));
-    }
-    if (groups.size < 2) continue;
-    const stats = [...groups.entries()].map(([v, arr]) => ({ v, n: arr.length, avg: mean(arr) }));
-    stats.sort((a, b) => b.avg - a.avg);
-    const best = stats[0];
-    const othersAvg = mean(analyzed.filter((i) => f.get(i) !== best.v).map(computeEngagement));
-    if (best.avg > 0 && othersAvg > 0) {
-      const ratio = best.avg / othersAvg;
-      if (ratio >= 1.3) {
-        factorFindings.push({
-          ratio,
-          line: {
-            text: `${f.label}: "${best.v}" rata-rata ${fmtNum(Math.round(best.avg))} engagement — ${round1(ratio)}× dibanding ${f.label.toLowerCase()} lain (n=${best.n}). ${mechanism(f.label, best.v)}`,
-            tag: best.n >= 3 && n >= 5 ? "KORELASI" : "HIPOTESIS",
-          },
+  // ---------- KESIMPULAN (benang merah) ----------
+  // For each dimension, compare top vs worst on the primary metric (first pattern metric, else views)
+  const primary = patternMetrics[0] ?? available[0];
+  if (primary) {
+    const top = groupMembers(primary, "top");
+    const worst = groupMembers(primary, "worst");
+    const relational: FalcoLine[] = [];
+    const nonRelational: FalcoLine[] = [];
+    for (const d of dims) {
+      const dt = domOf(top, d);
+      const dw = domOf(worst, d);
+      if (!dt) continue;
+      if (dw && dt.value !== dw.value) {
+        relational.push({
+          text: `${d.label}: top "${dt.value}" vs worst "${dw.value}" → faktor pembeda. ${mechanism(d.key, dt.value)}`,
+          tag: n < 5 ? "HIPOTESIS" : "RELASIONAL",
+        });
+      } else if (dw && dt.value === dw.value) {
+        nonRelational.push({
+          text: `${d.label}: top & worst sama-sama "${dt.value}" → bukan pembeda performa.`,
+          tag: "NON-RELASIONAL",
         });
       }
     }
+    report.conclusions.push(...relational.slice(0, 9));
+    report.conclusions.push(...nonRelational.slice(0, 3));
   }
-  factorFindings.sort((a, b) => b.ratio - a.ratio);
-  report.patterns.push(...factorFindings.map((x) => x.line));
-
-  // ---------- Anomaly ----------
+  // anomalies
   const engVals = analyzed.map(computeEngagement);
-  const m = mean(engVals);
-  const sd = std(engVals);
+  const m0 = mean(engVals);
+  const sd = Math.sqrt(mean(engVals.map((x) => (x - m0) ** 2)));
   if (sd > 0) {
     for (const i of analyzed) {
       const e = computeEngagement(i);
-      if (e > m + 1.5 * sd) {
-        report.anomalies.push({
-          text: `${i.id} "${i.title}" — ${fmtNum(e)} engagement (${round1(e / (m || 1))}× rata-rata). Outlier: telusuri faktor pembeda lalu uji untuk replikasi.`,
-          tag: "ANOMALI",
-        });
+      if (e > m0 + 1.5 * sd) {
+        report.conclusions.push({ text: `Anomali ${i.id} "${i.title}": ${fmtNum(e)} engagement (${round1(e / (m0 || 1))}× rata-rata) — telusuri & uji replikasi.`, tag: "ANOMALI" });
       }
     }
   }
+  if (report.conclusions.length === 0) {
+    report.conclusions.push({ text: "Belum ada faktor pembeda yang cukup kuat — lengkapi aspek konten & perbanyak data ber-hasil.", tag: "HIPOTESIS" });
+  }
 
-  // ---------- Absence (peluang) ----------
-  report.absences = computeAbsences(items, config);
-
-  // ---------- Step 5 & 6: KESIMPULAN + SARAN ----------
-  if (factorFindings.length > 0) {
-    const top2 = factorFindings.slice(0, 2);
-    for (const ff of top2) {
-      report.conclusions.push({ text: ff.line.text, tag: ff.line.tag });
+  // ---------- SARAN ----------
+  if (primary) {
+    const top = groupMembers(primary, "top");
+    const worst = groupMembers(primary, "worst");
+    let added = 0;
+    for (const d of dims) {
+      if (added >= 5) break;
+      const dt = domOf(top, d);
+      const dw = domOf(worst, d);
+      if (dt && dw && dt.value !== dw.value && dt.count >= 2) {
+        report.recommendationsData.push({
+          text: `Perbanyak konten dengan ${d.label.toLowerCase()} "${dt.value}" (dominan di top by ${primary.label}); kurangi "${dw.value}" yang dominan di worst.`,
+          tag: n < 5 ? "HIPOTESIS" : "KUAT",
+        });
+        added++;
+      }
     }
-    const best = factorFindings[0].line.text;
-    report.recommendations.push({
-      text: `Prioritas: perbanyak konten dengan profil pemenang di atas. ${best.split("—")[0].trim()} adalah faktor pembeda terkuat — replikasi & ukur views + share rate.`,
-      tag: "KUAT",
-    });
-  } else {
-    report.conclusions.push({
-      text: "Belum ada faktor pembeda yang cukup kuat dari data saat ini — perbanyak konten ber-hasil agar pattern bisa terbaca.",
-      tag: "HIPOTESIS",
-    });
+    if (added === 0) {
+      report.recommendationsData.push({ text: "Lengkapi aspek konten (talent, konsep, hook type, dll) agar saran berbasis pembeda bisa dihasilkan.", tag: "HIPOTESIS" });
+    }
   }
-  if (report.absences.length > 0) {
-    report.recommendations.push({
-      text: `Eksperimen: uji ${report.absences[0].text.replace(/^Belum ada (konten )?/i, "").replace(/\.$/, "")} sebagai blind spot yang belum tergarap.`,
-      tag: "PELUANG",
-    });
-  }
-  // posting consistency recommendation (operational, always relevant)
-  const weeklyTarget = config.postingTimes.reduce((s, p) => s + p.times.length, 0);
-  if (weeklyTarget > 0) {
-    report.recommendations.push({
-      text: `Jaga konsistensi: target ${weeklyTarget} konten tayang/minggu sesuai jadwal posting brand. Slot kosong = kehilangan reach kumulatif.`,
-    });
+  // exploratory = absences + combo experiment
+  report.recommendationsExplore = computeAbsences(items, config);
+  if (primary) {
+    const top = groupMembers(primary, "top");
+    const combo = dims.map((d) => domOf(top, d)).filter(Boolean).slice(0, 3).map((x, idx) => `${dims[idx].label.toLowerCase()} "${x!.value}"`);
+    if (combo.length >= 2) {
+      report.recommendationsExplore.push({ text: `Uji winning-combo secara terisolasi: ${combo.join(" + ")} dalam 3–4 konten berikutnya, lalu ukur views & retention.`, tag: "PELUANG" });
+    }
   }
 
   return report;
 }
 
-// Untapped formats / pillars / channels across the whole collection.
 function computeAbsences(items: ContentItem[], config: BrandConfig): FalcoLine[] {
   const out: FalcoLine[] = [];
-  const usedFormats = new Set(items.map((i) => i.format));
-  const candidateFormats = FORMATS.filter((f) => !usedFormats.has(f));
-  if (candidateFormats.length > 0 && items.length > 0) {
-    out.push({
-      text: `Belum ada konten format ${candidateFormats.slice(0, 3).map((f) => FORMAT_LABELS[f]).join(", ")}.`,
-      tag: "PELUANG",
-    });
-  }
   const usedPillars = new Set(items.map((i) => i.pillar));
   const missingPillars = config.pillars.filter((p) => !usedPillars.has(p.name));
-  if (missingPillars.length > 0) {
-    out.push({
-      text: `Pillar ${missingPillars.map((p) => p.name).join(", ")} belum pernah diproduksi.`,
-      tag: "PELUANG",
-    });
-  }
+  if (missingPillars.length > 0) out.push({ text: `Pillar ${missingPillars.map((p) => p.name).join(", ")} belum pernah diproduksi — peluang konten baru.`, tag: "PELUANG" });
   const usedChannels = new Set(items.flatMap((i) => i.channel));
   const missingChannels = config.channels.filter((c) => !usedChannels.has(c));
-  if (missingChannels.length > 0) {
-    out.push({
-      text: `Channel ${missingChannels.map((c) => CHANNEL_LABELS[c]).join(", ")} aktif tapi belum ada kontennya.`,
-      tag: "PELUANG",
-    });
+  if (missingChannels.length > 0) out.push({ text: `Channel ${missingChannels.map((c) => CHANNEL_LABELS[c]).join(", ")} aktif tapi belum ada kontennya.`, tag: "PELUANG" });
+  // untapped aspect values across the collection
+  for (const a of config.contentAspects ?? []) {
+    const filled = items.filter((i) => i.aspects?.[a.key]).length;
+    if (filled === 0) out.push({ text: `Aspek "${a.label}" belum pernah diisi — lengkapi agar Falco bisa membaca polanya.`, tag: "PELUANG" });
   }
-  return out;
+  return out.slice(0, 6);
 }
 
-// Lightweight mechanism hints (the "kenapa" Falco requires per pattern).
-function mechanism(factorLabel: string, value: string): string {
+function mechanism(dimKey: string, value: string): string {
   const v = value.toLowerCase();
-  if (factorLabel === "Format") {
-    if (/reels|short|video|live/.test(v)) return "Mekanisme: durasi/komplesi → algorithm push.";
+  if (dimKey === "format") {
+    if (/reels|short|video|live|tiktok/.test(v)) return "Mekanisme: durasi/komplesi → algorithm push.";
     if (/carousel/.test(v)) return "Mekanisme: kedalaman → saves → reach ulang.";
   }
-  if (factorLabel === "Hook") {
-    if (/pendek|tanpa/.test(v)) return "Mekanisme: cepat menangkap perhatian → stop-scroll.";
-    return "Mekanisme: perlu divalidasi (korelasi, belum tentu kausal).";
-  }
+  if (dimKey === "durasi") return "Mekanisme: durasi memengaruhi completion → distribusi.";
+  if (dimKey === "hookLen" || dimKey === "aspect_hookType") return "Mekanisme: hook menentukan stop-scroll di 3 detik pertama.";
+  if (dimKey === "aspect_sound") return "Mekanisme: trending sound → boost distribusi algoritma.";
+  if (dimKey === "aspect_talent") return "Mekanisme: talent → koneksi personal & trust.";
+  if (dimKey === "aspect_heuristik") return "Mekanisme: bias psikologis → daya tarik perhatian.";
   return "Mekanisme: perlu divalidasi (korelasi, belum tentu kausal).";
+}
+
+// ----- Markdown report (mengikuti kerangka NCL) -----
+export function generateFalcoMarkdown(report: FalcoReport): string {
+  const L = (lines: FalcoLine[]) => lines.map((l) => `- ${l.text}${l.tag ? ` _(${l.tag})_` : ""}`).join("\n");
+  const parts: string[] = [];
+  parts.push(`# Social Media Performance Analysis — Falco`);
+  parts.push(`**Periode:** ${report.periodLabel} · **Konten dianalisis:** ${report.n}/${report.totalItems} · **Top/Worst N:** ${report.topN}`);
+  if (report.warning) parts.push(`> ⚠️ ${report.warning}`);
+
+  parts.push(`\n## Overview\n${L(report.overview)}`);
+
+  parts.push(`\n## Top & Worst`);
+  for (const r of report.rankings) {
+    parts.push(`\n### ${r.metricLabel}`);
+    parts.push(`**Top ${r.top.length}:**\n${r.top.map((x, i) => `${i + 1}. ${x.id} — ${x.title} (${x.value})`).join("\n")}`);
+    parts.push(`**Worst ${r.worst.length}:**\n${r.worst.map((x, i) => `${i + 1}. ${x.id} — ${x.title} (${x.value})`).join("\n")}`);
+  }
+
+  parts.push(`\n## Pattern Analysis`);
+  for (const g of report.patternGroups) {
+    parts.push(`\n### Pattern — ${g.key}`);
+    parts.push(`Konten: ${g.members.map((m) => m.id).join(", ")}`);
+    parts.push(g.lines.length ? L(g.lines) : "_Belum cukup data aspek untuk membaca pola di grup ini._");
+  }
+
+  parts.push(`\n## Kesimpulan\n${L(report.conclusions)}`);
+
+  parts.push(`\n## Saran`);
+  parts.push(`\n### Saran Based on Data\n${L(report.recommendationsData)}`);
+  parts.push(`\n### Saran Eksploratif\n${L(report.recommendationsExplore)}`);
+
+  return parts.join("\n");
 }
